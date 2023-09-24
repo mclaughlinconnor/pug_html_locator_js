@@ -1,0 +1,3 @@
+[submodule "tree-sitter-pug"]
+	path = tree-sitter-pug
+	url = https://github.com/mclaughlinconnor/tree-sitter-pug

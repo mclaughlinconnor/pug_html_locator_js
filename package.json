@@ -1,0 +1,21 @@
+{
+  "name": "pug_html_locator_js",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "tree-sitter": "^0.20.5",
+    "tree-sitter-javascript": "^0.20.1",
+    "tree-sitter-pug": "file:./tree-sitter-pug"
+  },
+  "devDependencies": {
+    "@types/node": "^20.6.4",
+    "prettier": "^3.0.3",
+    "typescript": "^5.2.2"
+  }
+}
