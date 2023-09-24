@@ -1,20 +1,11 @@
 import Parser from "tree-sitter";
-const Pug = require("./tree-sitter-pug");
+const Pug = require("../tree-sitter-pug");
 
-interface Range {
-  htmlEnd: number;
-  htmlStart: number;
-  pugEnd: number;
-  pugStart: number;
-}
-
-interface State {
-  htmlText: string;
-  pugText: string;
-  ranges: Range[];
-}
-
-function getRange(node: Parser.SyntaxNode): Parser.Range {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @returns {Parser.Range}
+ */
+function getRange(node) {
   return {
     startIndex: node.startIndex,
     endIndex: node.endIndex,
@@ -23,7 +14,11 @@ function getRange(node: Parser.SyntaxNode): Parser.Range {
   };
 }
 
-function isVoidElement(tag_name: string): boolean {
+/**
+ * @param {string} tag_name
+ * @returns {boolean}
+ */
+function isVoidElement(tag_name) {
   switch (tag_name) {
     case "area":
     case "base":
@@ -45,17 +40,42 @@ function isVoidElement(tag_name: string): boolean {
   }
 }
 
+/**
+ * @param {string} input
+ * @returns {State}
+ */
+export function parse(input) {
+  const parser = new Parser();
+
+  parser.setLanguage(Pug);
+  const tree = parser.parse(input);
+
+  let rootNode = tree.rootNode;
+
+  let state = {
+    htmlText: "",
+    pugText: input,
+    ranges: [],
+  };
+
+  traverseTree(rootNode, state);
+
+  return state;
+}
+
+/**
+ * @returns {void} */
 function demo() {
-  const parser: Parser = new Parser();
+  const parser = new Parser();
 
   let pugInput = "";
 
   parser.setLanguage(Pug);
-  const tree: Parser.Tree = parser.parse(pugInput);
+  const tree = parser.parse(pugInput);
 
   let rootNode = tree.rootNode;
 
-  let state: State = {
+  let state = {
     htmlText: "",
     pugText: pugInput,
     ranges: [],
@@ -76,11 +96,17 @@ function demo() {
   }
 }
 
-function pushRange(state: State, toPush: string, pugRange?: Parser.Range) {
+/**
+ * @param {State} state
+ * @param {string} toPush
+ * @param {Parser.Range} [pugRange]
+ * @returns {void}
+ */
+function pushRange(state, toPush, pugRange) {
   if (pugRange) {
     let htmlLen = state.htmlText.length;
 
-    let range: Range = {
+    let range = {
       htmlStart: htmlLen,
       htmlEnd: htmlLen + toPush.length,
       pugStart: pugRange.startIndex,
@@ -93,11 +119,21 @@ function pushRange(state: State, toPush: string, pugRange?: Parser.Range) {
   state.htmlText += toPush;
 }
 
-function visitAttributeName(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitAttributeName(node, state) {
   pushRange(state, node.text, getRange(node));
 }
 
-function visitAttributes(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitAttributes(node, state) {
   let first = true;
 
   for (const attribute of node.namedChildren) {
@@ -137,22 +173,34 @@ function visitAttributes(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function pushRangeSurround(
-  state: State,
-  toPush: string,
-  pugRange: Parser.Range,
-  surround: string,
-) {
+/**
+ * @param {State} state
+ * @param {string} toPush
+ * @param {Parser.Range} pugRange
+ * @param {string} surround
+ * @returns {void}
+ */
+function pushRangeSurround(state, toPush, pugRange, surround) {
   pushRange(state, surround);
   pushRange(state, toPush, pugRange);
   pushRange(state, surround);
 }
 
-function visitTagName(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitTagName(node, state) {
   pushRange(state, node.text, getRange(node));
 }
 
-function visitIdClass(nodes: Parser.SyntaxNode[], state: State) {
+/**
+ * @param {Parser.SyntaxNode[]} nodes
+ * @param {State} state
+ * @returns {void}
+ */
+function visitIdClass(nodes, state) {
   let start = true;
 
   for (const node of nodes) {
@@ -170,7 +218,12 @@ function visitIdClass(nodes: Parser.SyntaxNode[], state: State) {
   }
 }
 
-function visitTag(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitTag(node, state) {
   let childNodes = node.namedChildren;
 
   let index = 0;
@@ -178,8 +231,8 @@ function visitTag(node: Parser.SyntaxNode, state: State) {
 
   let hasChildren = false;
 
-  let classes: Parser.SyntaxNode[] = [];
-  let ids: Parser.SyntaxNode[] = [];
+  let classes = [];
+  let ids = [];
 
   for (const childNode of childNodes) {
     if (childNode.type == "tag_name") {
@@ -241,11 +294,14 @@ function visitTag(node: Parser.SyntaxNode, state: State) {
     pushRange(state, nameNode.text);
     pushRange(state, ">");
   }
-
-  // TODO: parse content for {{angular_interpolation}} using angular_content parser
 }
 
-function visitConditional(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitConditional(node, state) {
   let conditionalCursor = node.walk();
 
   conditionalCursor.gotoFirstChild();
@@ -268,7 +324,12 @@ function visitConditional(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function visitPipe(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitPipe(node, state) {
   let cursor = node.walk();
 
   cursor.gotoFirstChild();
@@ -279,7 +340,12 @@ function visitPipe(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function visitTagInterpolation(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitTagInterpolation(node, state) {
   let interpolationCursor = node.walk();
 
   interpolationCursor.gotoFirstChild();
@@ -291,19 +357,34 @@ function visitTagInterpolation(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function visitFilename(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitFilename(node, state) {
   pushRange(state, '<a href="');
   pushRange(state, node.text, getRange(node));
   pushRange(state, '">');
 }
 
-function visitExtendsInclude(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitExtendsInclude(node, state) {
   for (const child of node.namedChildren) {
     traverseTree(child, state);
   }
 }
 
-function visitCaseWhen(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitCaseWhen(node, state) {
   let children = node.namedChildren;
   for (const child of children) {
     if (child.type == "javascript") {
@@ -316,7 +397,12 @@ function visitCaseWhen(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function visitUnbufferedCode(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitUnbufferedCode(node, state) {
   for (const child of node.namedChildren) {
     if (child.type == "javascript") {
       pushRange(state, "<script>");
@@ -328,7 +414,12 @@ function visitUnbufferedCode(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function visitBufferedCode(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function visitBufferedCode(node, state) {
   for (const child of node.namedChildren) {
     if (child.type == "javascript") {
       pushRange(state, "<script>return ");
@@ -340,7 +431,12 @@ function visitBufferedCode(node: Parser.SyntaxNode, state: State) {
   }
 }
 
-function traverseTree(node: Parser.SyntaxNode, state: State) {
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
+function traverseTree(node, state) {
   let nodeType = node.type;
 
   if (node.isNamed) {
@@ -482,3 +578,17 @@ function traverseTree(node: Parser.SyntaxNode, state: State) {
 }
 
 demo();
+
+/**
+ * @typedef {Object} Range
+ * @property {number} htmlEnd
+ * @property {number} htmlStart
+ * @property {number} pugEnd
+ * @property {number} pugStart
+ */
+/**
+ * @typedef {Object} State
+ * @property {string} htmlText
+ * @property {string} pugText
+ * @property {Range[]} ranges
+ */
