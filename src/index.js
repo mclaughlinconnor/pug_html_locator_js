@@ -1,5 +1,5 @@
 import Parser from "tree-sitter";
-const Pug = require("../tree-sitter-pug");
+import Pug from "tree-sitter-pug";
 
 /**
  * @param {Parser.SyntaxNode} node
