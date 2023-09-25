@@ -1,8 +1,7 @@
 {
   "name": "pug_html_locator_js",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "description": "",
-  "type": "module",
   "main": "src/index.js",
   "types": "src/index.d.ts",
   "scripts": {
