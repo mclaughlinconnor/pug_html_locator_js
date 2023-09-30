@@ -65,7 +65,7 @@ export function parse(input) {
 
 /**
  * @returns {void} */
-function demo() {
+export function demo() {
   const parser = new Parser();
 
   let pugInput = "";
@@ -144,8 +144,6 @@ function visitAttributes(node, state) {
     }
 
     let children = attribute.namedChildren;
-
-    console.log(children);
 
     let index = 0;
 
@@ -571,7 +569,7 @@ function traverseTree(node, state) {
         }
       }
       default: {
-        console.log("Unhandled node type: {}", nodeType);
+        // Unhandled node type
       }
     }
   }
