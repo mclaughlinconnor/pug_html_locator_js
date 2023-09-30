@@ -577,8 +577,6 @@ function traverseTree(node, state) {
   }
 }
 
-demo();
-
 /**
  * @typedef {Object} Range
  * @property {number} htmlEnd
