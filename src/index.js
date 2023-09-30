@@ -1,5 +1,5 @@
-import Parser from "tree-sitter";
-import Pug from "tree-sitter-pug";
+const Parser = require("tree-sitter");
+const Pug = require("tree-sitter-pug");
 
 /**
  * @param {Parser.SyntaxNode} node
@@ -44,7 +44,7 @@ function isVoidElement(tag_name) {
  * @param {string} input
  * @returns {State}
  */
-export function parse(input) {
+exports.parse = function parse(input) {
   const parser = new Parser();
 
   parser.setLanguage(Pug);
@@ -65,7 +65,7 @@ export function parse(input) {
 
 /**
  * @returns {void} */
-export function demo() {
+exports.demo = function demo() {
   const parser = new Parser();
 
   let pugInput = "";
