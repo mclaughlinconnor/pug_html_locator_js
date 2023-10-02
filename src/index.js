@@ -44,7 +44,7 @@ function isVoidElement(tag_name) {
  * @param {string} input
  * @returns {State}
  */
-exports.parse = function parse(input) {
+module.exports.parse = function parse(input) {
   const parser = new Parser();
 
   parser.setLanguage(Pug);
@@ -65,7 +65,7 @@ exports.parse = function parse(input) {
 
 /**
  * @returns {void} */
-exports.demo = function demo() {
+module.exports.demo = function demo() {
   const parser = new Parser();
 
   let pugInput = "";
