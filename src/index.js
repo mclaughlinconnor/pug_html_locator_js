@@ -2,6 +2,36 @@ const Parser = require("tree-sitter");
 const Pug = require("tree-sitter-pug");
 
 /**
+ * @param {number} index
+ * @param {State} state
+ * @returns {number}
+ */
+module.exports.htmlLocationToPugLocation = function htmlLocationToPugLocation(index, state) {
+  for (const range of state.ranges) {
+    if (range.htmlStart <= index <= range.htmlEnd) {
+      return range.pugStart + (index - range.htmlStart);
+    }
+  }
+
+  return -1;
+}
+
+/**
+ * @param {number} index
+ * @param {State} state
+ * @returns {number}
+ */
+module.exports.pugLocationToHtmlLocation = function pugLocationToHtmlLocation(index, state) {
+  for (const range of state.ranges) {
+    if (range.pugStart <= index <= range.pugEnd) {
+      return range.htmlStart + (index - range.pugStart);
+    }
+  }
+
+  return -1;
+}
+
+/**
  * @param {Parser.SyntaxNode} node
  * @returns {Parser.Range}
  */
