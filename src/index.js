@@ -1,19 +1,65 @@
 const Parser = require("tree-sitter");
 const Pug = require("tree-sitter-pug");
 
+const NodeType = {
+  ATTRIBUTE: 'ATTRIBUTE',
+  ATTRIBUTE_NAME: 'ATTRIBUTE_NAME',
+  CONTENT: 'CONTENT',
+  EMPTY: 'EMPTY',
+  EQUALS: 'EQUALS',
+  FILENAME: 'FILENAME',
+  ID_CLASS: 'ID_CLASS',
+  JAVASCRIPT: 'JAVASCRIPT',
+  SPACE: 'SPACE',
+  TAG: 'TAG',
+  TAG_NAME: 'TAG_NAME',
+};
+module.exports.NodeType = NodeType;
+
+/**
+ * @param {number} index
+ * @param {State} state
+ * @returns {Range}
+ */
+module.exports.rangeAtPugLocation = function rangeAtPugLocation(index, state) {
+  for (const range of state.ranges) {
+    if (range.pugStart <= index && index <= range.pugEnd) {
+      return range;
+    }
+  }
+}
+
+/**
+ * @param {number} index
+ * @param {State} state
+ * @returns {Range}
+ */
+module.exports.rangeAtHtmlLocation = function rangeAtHtmlLocation(index, state) {
+  for (const range of state.ranges) {
+    if (range.htmlStart <= index && index <= range.htmlEnd) {
+      return range;
+    }
+  }
+}
+
 /**
  * @param {number} index
  * @param {State} state
  * @returns {number}
  */
 module.exports.htmlLocationToPugLocation = function htmlLocationToPugLocation(index, state) {
+  let closest;
   for (const range of state.ranges) {
-    if (range.htmlStart <= index <= range.htmlEnd) {
-      return range.pugStart + (index - range.htmlStart);
+    if (range.htmlStart <= index && index <= range.htmlEnd) {
+      return Math.min(range.pugStart + (index - range.htmlStart), state.pugText.length);
+    }
+
+    if (!closest && range.htmlEnd > index) {
+      closest = range;
     }
   }
 
-  return -1;
+  return Math.min(closest.pugStart + (index - closest.htmlStart), state.pugText.length);
 }
 
 /**
@@ -22,13 +68,18 @@ module.exports.htmlLocationToPugLocation = function htmlLocationToPugLocation(in
  * @returns {number}
  */
 module.exports.pugLocationToHtmlLocation = function pugLocationToHtmlLocation(index, state) {
+  let closest;
   for (const range of state.ranges) {
-    if (range.pugStart <= index <= range.pugEnd) {
-      return range.htmlStart + (index - range.pugStart);
+    if (range.pugStart <= index && index <= range.pugEnd) {
+      return Math.min(range.htmlStart + (index - range.pugStart), state.htmlText.length);
+    }
+
+    if (!closest && range.pugEnd > index) {
+      closest = range;
     }
   }
 
-  return -1;
+  return Math.min(closest.htmlStart + (index - closest.pugStart), state.htmlText.length);
 }
 
 /**
@@ -42,6 +93,15 @@ function getRange(node) {
     startPosition: node.startPosition,
     endPosition: node.endPosition,
   };
+}
+
+function offsetPreviousRange(state, offset) {
+  const lastRange = state.ranges[state.ranges.length - 1];
+  if (lastRange) {
+    return {startIndex: lastRange.pugEnd + offset, endIndex: lastRange.pugEnd + offset};
+  }
+
+  return {startIndex: 0, endIndex: 0};
 }
 
 /**
@@ -90,6 +150,17 @@ module.exports.parse = function parse(input) {
 
   traverseTree(rootNode, state);
 
+  state.htmlText += "\n";
+
+  state.ranges.push(
+    {
+      htmlStart: state.htmlText.length - 1,
+      htmlEnd: state.htmlText.length,
+      pugStart: (state.ranges[state.ranges.length - 1]?.pugEnd || 0) + 1,
+      pugEnd: state.pugText.length,
+    }
+  )
+
   return state;
 }
 
@@ -98,7 +169,7 @@ module.exports.parse = function parse(input) {
 module.exports.demo = function demo() {
   const parser = new Parser();
 
-  let pugInput = "";
+  let pugInput = "app-root([title]=)";
 
   parser.setLanguage(Pug);
   const tree = parser.parse(pugInput);
@@ -121,7 +192,7 @@ module.exports.demo = function demo() {
       `'${state.htmlText.substring(
         range.htmlStart,
         range.htmlEnd,
-      )}' => '${state.pugText.substring(range.pugStart, range.pugEnd)}'`,
+      )}' => '${state.pugText.substring(range.pugStart, range.pugEnd)}': ${range.nodeType}`,
     );
   }
 }
@@ -129,16 +200,19 @@ module.exports.demo = function demo() {
 /**
  * @param {State} state
  * @param {string} toPush
+ * @param {keyof NodeType} [nodeType]
  * @param {Parser.Range} [pugRange]
  * @returns {void}
  */
-function pushRange(state, toPush, pugRange) {
+function pushRange(state, toPush, nodeType, pugRange) {
   if (pugRange) {
     let htmlLen = state.htmlText.length;
+
 
     let range = {
       htmlStart: htmlLen,
       htmlEnd: htmlLen + toPush.length,
+      nodeType: nodeType,
       pugStart: pugRange.startIndex,
       pugEnd: pugRange.endIndex,
     };
@@ -155,7 +229,7 @@ function pushRange(state, toPush, pugRange) {
  * @returns {void}
  */
 function visitAttributeName(node, state) {
-  pushRange(state, node.text, getRange(node));
+  pushRange(state, node.text, NodeType.ATTRIBUTE_NAME, getRange(node));
 }
 
 /**
@@ -164,23 +238,17 @@ function visitAttributeName(node, state) {
  * @returns {void}
  */
 function visitAttributes(node, state) {
-  let first = true;
-
-  for (const attribute of node.namedChildren) {
-    if (!first) {
-      pushRange(state, ", ");
-    } else {
-      first = false;
-    }
-
+  for (const [i, attribute] of node.namedChildren.entries()) {
     let children = attribute.namedChildren;
 
     let index = 0;
 
     let attributeName = children[index];
-    if (attributeName) {
-      visitAttributeName(attributeName, state);
+    if (!attributeName) {
+      continue;
     }
+
+    visitAttributeName(attributeName, state);
 
     index++;
     let attributeValue = children[index];
@@ -188,16 +256,26 @@ function visitAttributes(node, state) {
     if (attributeValue) {
       pushRange(state, "=");
       traverseTree(attributeValue, state);
-      return;
-    } else {
-      pushRange(state, "=");
-      pushRangeSurround(
-        state,
-        attributeName.text,
-        getRange(attributeName),
-        "'",
-      );
+    } else if (attribute.nextSibling?.text === "=") {
+      // if "attr=" has been typed, we still want the = in case that's where the cursor is
+      pushRange(state, "=", NodeType.EQUALS, offsetPreviousRange(state, 1));
     }
+
+    const lastRange = state.ranges[state.ranges.length - 1];
+    let spaceEnd = (lastRange?.pugEnd || 0) + 1;
+    let node = attribute.nextSibling;
+    while (node) {
+      if (node.text === ',' || node.type === 'ERROR') {
+        pushRange(state, " ", NodeType.SPACE, {startIndex: spaceEnd + 1, endIndex: node.startIndex});
+      } else if (node.text === ')' || node.isNamed) {
+        spaceEnd = node.isNamed ? node.startIndex - 1 : node.startIndex;
+        break;
+      }
+
+      node = node.nextSibling;
+    }
+
+    pushRange(state, " ", NodeType.SPACE, {startIndex: (state.ranges[state.ranges.length - 1]?.pugEnd || 0) + 1, endIndex: spaceEnd});
   }
 }
 
@@ -206,11 +284,12 @@ function visitAttributes(node, state) {
  * @param {string} toPush
  * @param {Parser.Range} pugRange
  * @param {string} surround
+ * @param {keyof NodeType} nodeType
  * @returns {void}
  */
-function pushRangeSurround(state, toPush, pugRange, surround) {
+function pushRangeSurround(state, toPush, pugRange, surround, nodeType) {
   pushRange(state, surround);
-  pushRange(state, toPush, pugRange);
+  pushRange(state, toPush, nodeType, pugRange);
   pushRange(state, surround);
 }
 
@@ -220,7 +299,20 @@ function pushRangeSurround(state, toPush, pugRange, surround) {
  * @returns {void}
  */
 function visitTagName(node, state) {
-  pushRange(state, node.text, getRange(node));
+  const pugRange = getRange(node);
+  const htmlLen = state.htmlText.length;
+  const toPush = node.text;
+
+  const range = {
+    htmlStart: htmlLen,
+    htmlEnd: htmlLen + toPush.length,
+    nodeType: NodeType.TAG_NAME,
+    pugStart: pugRange.startIndex,
+    pugEnd: pugRange.endIndex,
+  };
+
+  state.ranges.push(range);
+  state.htmlText += toPush;
 }
 
 /**
@@ -240,10 +332,21 @@ function visitIdClass(nodes, state) {
     range.startIndex += 1;
     let text = node.text.substring(1);
 
-    pushRange(state, text, range);
+    pushRange(state, text, NodeType.ID_CLASS, range);
 
     start = false;
   }
+}
+
+function handleClosingTagName(state, nameNode) {
+  let offset = 0;
+  if (isVoidElement(nameNode.text)) {
+    pushRange(state, "/");
+    pushRange(state, "", NodeType.EMPTY, offsetPreviousRange(state, -1));
+    offset--;
+  }
+  pushRange(state, ">");
+  pushRange(state, "", NodeType.EMPTY, offsetPreviousRange(state, offset));
 }
 
 /**
@@ -254,18 +357,31 @@ function visitIdClass(nodes, state) {
 function visitTag(node, state) {
   let childNodes = node.namedChildren;
 
-  let index = 0;
-  let nameNode = childNodes[index];
+  let nameNode;
 
-  let hasChildren = false;
+  let handledClosingTagName = false;
 
   let classes = [];
   let ids = [];
 
+
+  if (childNodes[0].type === "tag_name") {
+    const startRange = getRange(childNodes[0]);
+    startRange.endIndex = startRange.startIndex;
+    startRange.endPosition = startRange.startPosition;
+    pushRange(state, "", NodeType.EMPTY, startRange);
+    pushRange(state, "<");
+
+    traverseTree(childNodes[0], state);
+    nameNode = childNodes[0];
+  } else {
+    pushRange(state, "<");
+    pushRange(state, "div");
+    nameNode = {text: 'div'}
+  }
+
   for (const childNode of childNodes) {
     if (childNode.type == "tag_name") {
-      pushRange(state, "<");
-      traverseTree(childNode, state);
       continue;
     }
 
@@ -280,6 +396,7 @@ function visitTag(node, state) {
     }
 
     if (childNode.type == "attributes") {
+      hasAttributes = true;
       if (classes.length) {
         pushRange(state, ' class="');
         visitIdClass(classes, state);
@@ -292,29 +409,24 @@ function visitTag(node, state) {
         pushRange(state, '"');
       }
 
-      pushRange(state, " ");
+      pushRange(state, " ", NodeType.SPACE, offsetPreviousRange(state, 0));
       traverseTree(childNode, state);
+      // if (!childNode.isNamed) {
+        pushRange(state, " ", NodeType.SPACE, getRange(childNode.lastChild));
+      // }
 
       continue;
     }
 
-    if (!hasChildren) {
-      if (isVoidElement(nameNode.text)) {
-        pushRange(state, "/");
-      }
-      pushRange(state, ">");
-      hasChildren = true;
-    }
+    handleClosingTagName(state, nameNode);
+    handledClosingTagName = true;
 
     // found something else that needs no extra handling
     traverseTree(childNode, state);
   }
 
-  if (!hasChildren) {
-    if (isVoidElement(nameNode.text)) {
-      pushRange(state, "/");
-    }
-    pushRange(state, ">");
+  if (!handledClosingTagName) {
+    handleClosingTagName(state, nameNode);
   }
 
   if (!isVoidElement(nameNode.text)) {
@@ -339,7 +451,7 @@ function visitConditional(node, state) {
     let condition = conditionalCursor.currentNode;
 
     pushRange(state, "<script>return ");
-    pushRange(state, condition.text, getRange(condition));
+    pushRange(state, condition.text, NodeType.JAVASCRIPT, getRange(condition));
     pushRange(state, ";</script>");
     conditionalCursor.gotoNextSibling();
   }
@@ -392,7 +504,7 @@ function visitTagInterpolation(node, state) {
  */
 function visitFilename(node, state) {
   pushRange(state, '<a href="');
-  pushRange(state, node.text, getRange(node));
+  pushRange(state, node.text, NodeType.FILENAME, getRange(node));
   pushRange(state, '">');
 }
 
@@ -417,7 +529,7 @@ function visitCaseWhen(node, state) {
   for (const child of children) {
     if (child.type == "javascript") {
       pushRange(state, "<script>return ");
-      pushRange(state, child.text, getRange(child));
+      pushRange(state, child.text, NodeType.JAVASCRIPT, getRange(child));
       pushRange(state, ";</script>");
     } else {
       traverseTree(child, state);
@@ -434,7 +546,7 @@ function visitUnbufferedCode(node, state) {
   for (const child of node.namedChildren) {
     if (child.type == "javascript") {
       pushRange(state, "<script>");
-      pushRange(state, child.text, getRange(child));
+      pushRange(state, child.text, NodeType.JAVASCRIPT, getRange(child));
       pushRange(state, ";</script>");
     } else {
       traverseTree(child, state);
@@ -447,11 +559,45 @@ function visitUnbufferedCode(node, state) {
  * @param {State} state
  * @returns {void}
  */
+function visitMixinDefinition(node, state) {
+  if (node.namedChildren.length === 2) {
+    return;
+  }
+
+  let index = 2; // skip the keyword and the name
+
+
+  pushRange(state, "<ng-template ")
+
+  if (node.namedChildren[index]?.type === 'mixin_attributes') {
+    const attributes = node.namedChildren[index];
+    for (const attribute of attributes.namedChildren) {
+      pushRange(state, "let-");
+      pushRange(state, attribute.text, NodeType.ATTRIBUTE, getRange(attribute));
+      pushRange(state, " ");
+    }
+    index++;
+  }
+
+  pushRange(state, ">");
+
+  // Should just be the mixin content now
+  traverseTree(node.namedChildren[index], state);
+
+  pushRange(state, "</ng-template>")
+}
+
+
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
 function visitBufferedCode(node, state) {
   for (const child of node.namedChildren) {
     if (child.type == "javascript") {
       pushRange(state, "<script>return ");
-      pushRange(state, child.text, getRange(child));
+      pushRange(state, child.text, NodeType.JAVASCRIPT, getRange(child));
       pushRange(state, ";</script>");
     } else {
       traverseTree(child, state);
@@ -471,7 +617,6 @@ function traverseTree(node, state) {
     switch (nodeType) {
       case "source_file":
       case "children":
-      case "mixin_definition":
       case "block_definition":
       case "block_use":
       case "each": {
@@ -481,12 +626,16 @@ function traverseTree(node, state) {
         }
         break;
       }
+      case "mixin_definition": {
+        visitMixinDefinition(node, state);
+        break;
+      }
       case "iteration_variable":
       case "iteration_iterator": {
         for (const child of node.namedChildren) {
           if (child.type == "javascript") {
             pushRange(state, "<script>return ");
-            pushRange(state, child.text, getRange(child));
+            pushRange(state, child.text, NodeType.JAVASCRIPT, getRange(child));
             pushRange(state, ";</script>");
           } else {
             traverseTree(child, state);
@@ -498,7 +647,7 @@ function traverseTree(node, state) {
         for (const child of node.namedChildren) {
           if (child.type == "javascript") {
             pushRange(state, "<script>");
-            pushRange(state, child.text, getRange(child));
+            pushRange(state, child.text, NodeType.JAVASCRIPT, getRange(child));
             pushRange(state, ";</script>");
           } else {
             traverseTree(child, state);
@@ -520,7 +669,7 @@ function traverseTree(node, state) {
         if (interpolationContent) {
           let text = interpolationContent.text;
           pushRange(state, "<script>return ");
-          pushRange(state, text, getRange(interpolationContent));
+          pushRange(state, text, NodeType.JAVASCRIPT, getRange(interpolationContent));
           pushRange(state, ";</script>");
         }
         break;
@@ -561,11 +710,11 @@ function traverseTree(node, state) {
         break;
       }
       case "javascript": {
-        pushRangeSurround(state, node.text, getRange(node), "'");
+        pushRangeSurround(state, node.text, getRange(node), node.text.includes("'") ? "\"" : "'");
         break;
       }
       case "quoted_attribute_value": {
-        pushRange(state, node.text, getRange(node));
+        pushRange(state, node.text, NodeType.ATTRIBUTE, getRange(node));
         break;
       }
       case "content": {
@@ -574,7 +723,7 @@ function traverseTree(node, state) {
         }
         // Always traverse the whole content after we've traversed the interpolation, so they
         // appear after in the conversion ranges
-        pushRange(state, node.text, getRange(node));
+        pushRange(state, node.text, NodeType.CONTENT, getRange(node));
         break;
       }
       case "extends":
@@ -595,8 +744,8 @@ function traverseTree(node, state) {
       case "ERROR": {
         for (const interpolation of node.namedChildren) {
           traverseTree(interpolation, state);
-          break;
         }
+        break;
       }
       default: {
         // Unhandled node type
@@ -609,6 +758,7 @@ function traverseTree(node, state) {
  * @typedef {Object} Range
  * @property {number} htmlEnd
  * @property {number} htmlStart
+ * @property {keyof NodeType} nodeType
  * @property {number} pugEnd
  * @property {number} pugStart
  */
