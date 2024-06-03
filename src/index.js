@@ -169,7 +169,7 @@ module.exports.parse = function parse(input) {
 module.exports.demo = function demo() {
   const parser = new Parser();
 
-  let pugInput = "app-root([title]=)";
+  let pugInput = "input.form-control([placeholder]=`hello`)\n";
 
   parser.setLanguage(Pug);
   const tree = parser.parse(pugInput);
@@ -228,6 +228,39 @@ function pushRange(state, toPush, nodeType, pugRange) {
  * @param {State} state
  * @returns {void}
  */
+function visitJavascript(node, state) {
+  let text = node.text
+
+  const nRanges = state.ranges.length - 1
+  const isAttribute = nRanges >= 2 && state.ranges[nRanges].nodeType == NodeType.EQUALS && state.ranges[nRanges-1].nodeType == NodeType.ATTRIBUTE_NAME
+  const isTemplateString = text.includes('`')
+  const r = getRange(node)
+
+  const quote = "'"
+  if (text.includes("'")) {
+    quote = "\""
+  }
+
+  if (nRanges < 1 || !isAttribute) {
+    pushRangeSurround(state, text, r, quote, NodeType.JAVASCRIPT)
+    return
+  }
+
+  if (isTemplateString) {
+    text = text.replaceAll("`", "")
+    pushRange(state, `"$any('`)
+    pushRange(state, text, NodeType.JAVASCRIPT, r)
+    pushRange(state, `')"`)
+  } else {
+    pushRangeSurround(state, text, r, quote, NodeType.JAVASCRIPT)
+  }
+}
+
+/**
+ * @param {Parser.SyntaxNode} node
+ * @param {State} state
+ * @returns {void}
+ */
 function visitAttributeName(node, state) {
   pushRange(state, node.text, NodeType.ATTRIBUTE_NAME, getRange(node));
 }
@@ -254,7 +287,8 @@ function visitAttributes(node, state) {
     let attributeValue = children[index];
 
     if (attributeValue) {
-      pushRange(state, "=");
+      const r = offsetPreviousRange(state, 1)
+      pushRange(state, "=", NodeType.EQUALS, r);
       traverseTree(attributeValue, state);
     } else if (attribute.nextSibling?.text === "=") {
       // if "attr=" has been typed, we still want the = in case that's where the cursor is
@@ -710,7 +744,7 @@ function traverseTree(node, state) {
         break;
       }
       case "javascript": {
-        pushRangeSurround(state, node.text, getRange(node), node.text.includes("'") ? "\"" : "'");
+        visitJavascript(node, state)
         break;
       }
       case "quoted_attribute_value": {
