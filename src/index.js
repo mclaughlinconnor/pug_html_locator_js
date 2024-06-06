@@ -236,7 +236,7 @@ function visitJavascript(node, state) {
   const isTemplateString = text.includes('`')
   const r = getRange(node)
 
-  const quote = "'"
+  let quote = "'"
   if (text.includes("'")) {
     quote = "\""
   }
