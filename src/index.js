@@ -2,6 +2,7 @@ const Parser = require("tree-sitter");
 const Pug = require("tree-sitter-pug");
 
 const NodeType = {
+  ANGULAR_ATTRIBUTE_NAME: 'ANGULAR_ATTRIBUTE_NAME',
   ATTRIBUTE: 'ATTRIBUTE',
   ATTRIBUTE_NAME: 'ATTRIBUTE_NAME',
   CONTENT: 'CONTENT',
@@ -98,10 +99,10 @@ function getRange(node) {
 function offsetPreviousRange(state, offset) {
   const lastRange = state.ranges[state.ranges.length - 1];
   if (lastRange) {
-    return {startIndex: lastRange.pugEnd + offset, endIndex: lastRange.pugEnd + offset};
+    return { startIndex: lastRange.pugEnd + offset, endIndex: lastRange.pugEnd + offset };
   }
 
-  return {startIndex: 0, endIndex: 0};
+  return { startIndex: 0, endIndex: 0 };
 }
 
 /**
@@ -169,7 +170,7 @@ module.exports.parse = function parse(input) {
 module.exports.demo = function demo() {
   const parser = new Parser();
 
-  let pugInput = "input.form-control([placeholder]=`hello`)\n";
+  let pugInput = "tag([input]=variable, attr=variable)\n";
 
   parser.setLanguage(Pug);
   const tree = parser.parse(pugInput);
@@ -196,6 +197,7 @@ module.exports.demo = function demo() {
     );
   }
 }
+module.exports.demo ()
 
 /**
  * @param {State} state
@@ -232,8 +234,15 @@ function visitJavascript(node, state) {
   let text = node.text
 
   const nRanges = state.ranges.length - 1
-  const isAttribute = nRanges >= 2 && state.ranges[nRanges].nodeType == NodeType.EQUALS && state.ranges[nRanges-1].nodeType == NodeType.ATTRIBUTE_NAME
+  const hasRanges = nRanges >= 2
+  const proceedsEquals = state.ranges[nRanges].nodeType === NodeType.EQUALS
+
+  const isAttribute = hasRanges && proceedsEquals && state.ranges[nRanges - 1].nodeType == NodeType.ATTRIBUTE_NAME
+  const isAngularAttribute = hasRanges && proceedsEquals && state.ranges[nRanges - 1].nodeType == NodeType.ANGULAR_ATTRIBUTE_NAME
+
   const isTemplateString = text.includes('`')
+  const isString = (/("(?:[^'\\]|\\.))|('(?:[^'\\]|\\.)+)/).test(node.text)
+
   const r = getRange(node)
 
   let quote = "'"
@@ -241,7 +250,7 @@ function visitJavascript(node, state) {
     quote = "\""
   }
 
-  if (nRanges < 1 || !isAttribute) {
+  if (nRanges < 1 || !(isAttribute || isAngularAttribute)) {
     pushRangeSurround(state, text, r, quote, NodeType.JAVASCRIPT)
     return
   }
@@ -250,6 +259,13 @@ function visitJavascript(node, state) {
     text = text.replaceAll("`", "")
     pushRange(state, `"$any('`)
     pushRange(state, text, NodeType.JAVASCRIPT, r)
+    pushRange(state, `')"`)
+  } else if (isString) {
+    pushRangeSurround(state, text, r, quote, NodeType.JAVASCRIPT)
+  } else if (isAngularAttribute) {
+    const escaped = text.replace(`"`, `\"`).replace(`'`, `\'`)
+    pushRange(state, `"$any('`)
+    pushRange(state, escaped, NodeType.JAVASCRIPT, r)
     pushRange(state, `')"`)
   } else {
     pushRangeSurround(state, text, r, quote, NodeType.JAVASCRIPT)
@@ -262,7 +278,16 @@ function visitJavascript(node, state) {
  * @returns {void}
  */
 function visitAttributeName(node, state) {
-  pushRange(state, node.text, NodeType.ATTRIBUTE_NAME, getRange(node));
+	const isAngularAttribute = (/(\[[\w\.-]+\])|(\([\w\.-]+\))|(\*\w)/).test(node.text)
+
+  let t
+  if (isAngularAttribute) {
+    t = NodeType.ANGULAR_ATTRIBUTE_NAME
+  } else {
+    t = NodeType.ATTRIBUTE_NAME
+  }
+
+  pushRange(state, node.text, t, getRange(node))
 }
 
 /**
@@ -300,7 +325,7 @@ function visitAttributes(node, state) {
     let node = attribute.nextSibling;
     while (node) {
       if (node.text === ',' || node.type === 'ERROR') {
-        pushRange(state, " ", NodeType.SPACE, {startIndex: spaceEnd + 1, endIndex: node.startIndex});
+        pushRange(state, " ", NodeType.SPACE, { startIndex: spaceEnd + 1, endIndex: node.startIndex });
       } else if (node.text === ')' || node.isNamed) {
         spaceEnd = node.isNamed ? node.startIndex - 1 : node.startIndex;
         break;
@@ -309,7 +334,7 @@ function visitAttributes(node, state) {
       node = node.nextSibling;
     }
 
-    pushRange(state, " ", NodeType.SPACE, {startIndex: (state.ranges[state.ranges.length - 1]?.pugEnd || 0) + 1, endIndex: spaceEnd});
+    pushRange(state, " ", NodeType.SPACE, { startIndex: (state.ranges[state.ranges.length - 1]?.pugEnd || 0) + 1, endIndex: spaceEnd });
   }
 }
 
@@ -411,7 +436,7 @@ function visitTag(node, state) {
   } else {
     pushRange(state, "<");
     pushRange(state, "div");
-    nameNode = {text: 'div'}
+    nameNode = { text: 'div' }
   }
 
   for (const childNode of childNodes) {
@@ -446,7 +471,7 @@ function visitTag(node, state) {
       pushRange(state, " ", NodeType.SPACE, offsetPreviousRange(state, 0));
       traverseTree(childNode, state);
       // if (!childNode.isNamed) {
-        pushRange(state, " ", NodeType.SPACE, getRange(childNode.lastChild));
+      pushRange(state, " ", NodeType.SPACE, getRange(childNode.lastChild));
       // }
 
       continue;
