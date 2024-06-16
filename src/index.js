@@ -197,7 +197,6 @@ module.exports.demo = function demo() {
     );
   }
 }
-module.exports.demo ()
 
 /**
  * @param {State} state
