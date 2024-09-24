@@ -234,7 +234,7 @@ function visitJavascript(node, state) {
 
   const nRanges = state.ranges.length - 1
   const hasRanges = nRanges >= 2
-  const proceedsEquals = state.ranges[nRanges].nodeType === NodeType.EQUALS
+  const proceedsEquals = nRanges > 0 && state.ranges[nRanges].nodeType === NodeType.EQUALS
 
   const isAttribute = hasRanges && proceedsEquals && state.ranges[nRanges - 1].nodeType == NodeType.ATTRIBUTE_NAME
   const isAngularAttribute = hasRanges && proceedsEquals && state.ranges[nRanges - 1].nodeType == NodeType.ANGULAR_ATTRIBUTE_NAME
